@@ -18,6 +18,7 @@
  *  - Link zum TR-064-Community-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community
  * ---------------------------
  * Change log:
+ * 0.4 - Mic: kleine Korrekturen
  * 0.3 - Mic:
  *        - Diverse Verbesserungen: Sourcecode, Logging, States neu gegliedert,
  *          besserer Scriptstart, Bereinigung, Abfangen von Fehlern, usw.
@@ -106,7 +107,7 @@ function init() {
 
         // Delete state, if SIMULATION_ACTIVE is false and if state exists. Just to clean up if it was true before and user changed it to false.
         if(! SIMULATION_ACTIVE) {
-            if (isState(STATE_PATH + 'presenceSimulationActive')) {
+            if (isState(STATE_PATH + 'presenceSimulationActive'), true) {
                 deleteState(STATE_PATH + 'presenceSimulationActive');
             }
         }
@@ -302,15 +303,19 @@ function cl(strToClean) {
 /**
  * Checks if a a given state or part of state is existing.
  * This is a workaround, as getObject() or getState() throw warnings in the log.
- * Also works for state 'folders'.
- * Please note: if the full state path is 'javascript.0.switches.Osram.Bedroom', and your input
- * string is 'javascript.0.switches.Osram.Bed' (so Bed and not Bedroom), it will result in true.
+ * Set strict to true if the state shall match exactly. If it is false, it will add a wildcard * to the end.
  * See: https://forum.iobroker.net/topic/11354/
- * @param {string} strStatePath   Input string of state, like 'javascript.0.switches.Osram.Bedroom'
- * @return {boolean}       true if state exists, false if not
+ * @param {string}    strStatePath     Input string of state, like 'javascript.0.switches.Osram.Bedroom'
+ * @param {boolean}   [strict=false]   Optional: if true, it will work strict, if false, it will add a wildcard * to the end of the string
+ * @return {boolean}                   true if state exists, false if not
  */
-function isState(strStatePath) {
-    let mSelector = $('state[id=' + strStatePath + ']');
+function isState(strStatePath, strict) {
+    let mSelector;
+    if (strict) {
+        mSelector = $('state[id=' + strStatePath + '$]');
+    } else {
+        mSelector = $('state[id=' + strStatePath + ']');
+    }
     if (mSelector.length > 0) {
         return true;
     } else {
