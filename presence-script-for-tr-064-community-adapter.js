@@ -121,7 +121,7 @@ function init() {
             for (let lpDevice in DEVICES){
                 on({id: STATEPATH_TR064_DEVICES + lpDevice, change:'ne'}, function(obj) {
                     let deviceName = obj.id.split('.').pop();
-                    if (obj.state.ack || TEST) {
+                    if (obj.state.ack) {
                         // Only continue if adapter presence state differs to the script state
                         if( obj.state.val !== (getState(STATE_PATH + 'persons.' + cl(DEVICES[deviceName]) + '.isPresent')).val) {
                             if (LOG_DEBUG) log('Presence status of ' + cl(DEVICES[deviceName]) + ' actually changed');
