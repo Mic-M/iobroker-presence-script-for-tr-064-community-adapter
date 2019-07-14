@@ -271,7 +271,7 @@ function writelog(string) {
  */
 function createScriptStates(){
 
-    if (! getObject(STATE_PATH + 'anyonePresent')) {
+    if (! isState(STATE_PATH)) {
         if (LOG_INFO) log('Initiale Datenpunkte werden nun unter [' + STATE_PATH.slice(0, -1) + '] erstellt.');
     }
 
@@ -302,7 +302,12 @@ function cl(strToClean) {
 /**
  * Checks if a a given state or part of state is existing.
  * This is a workaround, as getObject() or getState() throw warnings in the log.
- * Also works for state 'folders'
+ * Also works for state 'folders'.
+ * Please note: if the full state path is 'javascript.0.switches.Osram.Bedroom', and your input
+ * string is 'javascript.0.switches.Osram.Bed' (so Bed and not Bedroom), it will result in true.
+ * See: https://forum.iobroker.net/topic/11354/
+ * @param {string} strStatePath   Input string of state, like 'javascript.0.switches.Osram.Bedroom'
+ * @return {boolean}       true if state exists, false if not
  */
 function isState(strStatePath) {
     let mSelector = $('state[id=' + strStatePath + ']');
