@@ -1,13 +1,15 @@
 /*******************************************************************************
  * ---------------------------
- * Script: Anwesenheitserkennung über TR-064-Community-Adapter
+ * Script: An- und Abwesenheitserkennung über TR-064-Community-Adapter
  * ---------------------------
  * Autor: Mic (ioBroker-Forum) / Mic-M (Github)
  * ---------------------------
- * Das Script nutzt den TR-064-Community-Adapter der die WLAN verfügbarkeit von allen Geräten überwacht.
+ * Das Script nutzt den TR-064-Community-Adapter, der die WLAN-Verfügbarkeit von allen Geräten überwacht.
  *
  * Funktionen:
  *  - Ermittlung der anwesenden und abwesenden Personen
+ *  - State 'anyonePresent': wird 'true' gesetzt, wenn 1 oder mehr Personen anwesend, und 'false', wenn keiner.
+ *    Dies kann als Trigger genutzt werden, um zum Beispiel alles auszuschalten, wenn keiner mehr zu Hause.
  *  - Speichern von Kommen- und Gehen-Zeiten
  *  - Führen einer An- und Abwesenheitsliste als Json und HTML
  *  - optional: Datei-Log  für jede Aktualisierung der An- und Abwesenheit
@@ -18,6 +20,9 @@
  *  - Link zum TR-064-Community-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community
  * ---------------------------
  * Change log:
+ * 0.5 - Mic: State 'presentPersonsString': Alphabetische Sortierung und Trennzeichen kann in den erweiterten Einstellungen
+ *               des Scripts geändert werden (PRESENT_PERSONS_DELIMITER). Außerdem kann Text vergeben werden, wenn niemand
+ *               zu Hause ist (PRESENT_PERSONS_NONE_TXT).
  * 0.4 - Mic: kleine Korrekturen
  * 0.3 - Mic:
  *        - Diverse Verbesserungen: Sourcecode, Logging, States neu gegliedert,
@@ -32,7 +37,7 @@
 
 
 /*******************************************************************************
- * Konfiguration:
+ * Einstellungen
  ******************************************************************************/
 
 // Hier werden die States dieses Scripts angelegt
@@ -51,10 +56,10 @@ const DEVICES = {
 	 'Xiaomi': 'Daisy', 
 };
 
-
 // Logging in Datei
 const LOGFLAG = false;   // Logging ein- oder ausschalten
 const LOGPATH_FS = "/opt/iobroker/iobroker-data/Anwesenheiten.csv";             // Pfad und Dateiname der Log-Datei
+
 
 // Falls eine Anwesenheitssimulation verknüpft werden soll dann hier TRUE eintragen, sowie
 // die Zeit in Sekunden nach Abwesenheit, die vergehen soll bis die Simulation aktiviert wird
@@ -70,8 +75,24 @@ const LOG_DEBUG = false;   // Erweiterter Log für Debugging
 // auf "nicht anwesend" im Adapter gesetzt, dann ca. 15 Sekunden später wieder auf "anwesend", dann ca. 5-10 Minuten
 // später dauerhaft auf "nicht anwesend". Um dieses Verhalten zu umgehen, wird hier ein Delay eingebaut,
 // um nach x Sekunden (FIX_ERROR_DELAY) zu prüfen, ob lt. Adapter tatsächlich abwesend.
+// Siehe auch Github Issue: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community/issues/55
 const FIX_ERROR = true;
 const FIX_ERROR_DELAY = 25;
+
+
+/*******************************************************************************
+ * Erweiterte Einstellungen
+ ******************************************************************************/
+
+/********
+ * Datenpunkt presentPersonsString
+ ********/
+// Trennzeichen für 'presentPersonsString'. Dieses wird zwischen den einzelnen anwesenden Namen gesetzt.
+const PRESENT_PERSONS_DELIMITER = ', ';
+
+// Text in für 'presentPersonsString', falls niemand anwesend.
+const PRESENT_PERSONS_NONE_TXT = '';
+
 
 
 /**********************************************************************************************************
@@ -193,7 +214,11 @@ function main(userKey) {
         }
         if (isLoopUserPresent) {
             counter += 1;
-            presentPersons += cl(DEVICES[lpDevice]) + " ";
+            if (presentPersons === '') {
+                presentPersons = cl(DEVICES[lpDevice]);
+            } else {
+                presentPersons += '######' + cl(DEVICES[lpDevice]);
+            }
             isAnyonePresent = true;
         }
 
@@ -207,6 +232,18 @@ function main(userKey) {
         HTMLString+="</tr>";
         
     }
+
+    // Prepare present persons string
+    if (!isAnyonePresent) {
+        presentPersons = PRESENT_PERSONS_NONE_TXT;
+    } else {
+        // sort present persons alphabetically and add delimiter from options, when converting back to string
+        let presPersArr = presentPersons.split('######');
+        presPersArr.sort(); 
+        presentPersons = presPersArr.join(PRESENT_PERSONS_DELIMITER);
+    }
+    
+
 
     // Log
     if (LOG_INFO && (message != '')) {
@@ -228,7 +265,6 @@ function main(userKey) {
 
     setState(STATE_PATH + 'anyonePresent', isAnyonePresent);
     setState(STATE_PATH + 'allPresentPersonsCount', counter);
-    if (!isAnyonePresent) presentPersons = '';
     setState(STATE_PATH + 'presentPersonsString', presentPersons);
 
 
