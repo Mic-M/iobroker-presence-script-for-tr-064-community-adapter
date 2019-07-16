@@ -20,6 +20,9 @@
  *  - Link zum TR-064-Community-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community
  * ---------------------------
  * Change log:
+ * 0.6 - Mic: Neuer State 'persons.xxx.offsetEntryLeave', zeigt wie lange die Person an-/abwesend war.
+ *               entweder nur in Stunden gerundet (z.B. 49), oder in Stunden:Minuten (z.B. 48:36).
+ *               Siehe Erweiterte Einstellungen, OFFSET_HOURS_AND_MINS, hier im Script.
  * 0.5 - Mic: State 'presentPersonsString': Alphabetische Sortierung und Trennzeichen kann in den erweiterten Einstellungen
  *               des Scripts geändert werden (PRESENT_PERSONS_DELIMITER). Außerdem kann Text vergeben werden, wenn niemand
  *               zu Hause ist (PRESENT_PERSONS_NONE_TXT).
@@ -41,8 +44,8 @@
  ******************************************************************************/
 
 // Hier werden die States dieses Scripts angelegt
+//const STATE_PATH = 'javascript.'+ instance + '.' + 'mic.TR064-Anwesenheitssteuerung.';
 const STATE_PATH = 'javascript.'+ instance + '.' + 'TR064-Anwesenheitssteuerung.';
-
 
 // Hier ist der State des TR-064-Community-Adapters, unter dem die einzelnen Geräte geführt sind
 const STATEPATH_TR064_DEVICES    =    'tr-064-community.0.devices.';
@@ -85,13 +88,22 @@ const FIX_ERROR_DELAY = 25;
  ******************************************************************************/
 
 /********
- * Datenpunkt presentPersonsString
+ * Option für Datenpunkt "presentPersonsString" (Zeigt die derzeit anwesenden Personen)
  ********/
 // Trennzeichen für 'presentPersonsString'. Dieses wird zwischen den einzelnen anwesenden Namen gesetzt.
 const PRESENT_PERSONS_DELIMITER = ', ';
 
 // Text in für 'presentPersonsString', falls niemand anwesend.
 const PRESENT_PERSONS_NONE_TXT = '';
+
+/********
+ * Option für Datenpunkt "persons.xxx.offsetEntryLeave" (zeigt , wie lange die Person an- oder abwesend war.)
+ ********/
+// Wenn true: Im Datenpunkt werden Stunden und Minuten angezeigt, z.B. 10:36 (bei 10 Stunden 36 Min.), oder 48:12 (bei 48 Std. 12 Min.)
+// Wenn false: Es werden nur Stunden gerundet angezeigt, z.B. 11 (bei 10 Stunden 36 Minuten) oder 48 (bei 48 Std. 12 Min.)
+const OFFSET_HOURS_AND_MINS = true;
+
+
 
 
 
@@ -222,15 +234,44 @@ function main(userKey) {
             isAnyonePresent = true;
         }
 
+        /**
+         * Generate Json String
+         */
         JsonString += "{" + '"'  + "Name" + '":' + '"'  + cl(DEVICES[lpDevice]) + '"' + "," + '"'  + "Status" + '"' + ":" + '"'  + (isLoopUserPresent ? 'anwesend' : 'abwesend') + '"' + "," + '"'  + "Letzte Ankunft" + '"' + ":" + '"'  + lpTimeLastEntry + '"' + "," + '"'  + "Letzte Abwesenheit" + '"' + ":" + '"'  + lpTimeLastLeave + '"' + "}";
 
+        /**
+         * Generate HTML String
+         */
         HTMLString+="<tr>";
         HTMLString+="<td>"+cl(DEVICES[lpDevice])+"</td>"
         HTMLString+="<td>"+(isLoopUserPresent ? '<div class="mdui-green-bg mdui-state mdui-card">anwesend</div>' : '<div class="mdui-red-bg mdui-state mdui-card">abwesend</div>')+"</td>"
         HTMLString+="<td>"+lpTimeLastEntry+"</td>"
         HTMLString+="<td>"+lpTimeLastLeave+"</td>"
         HTMLString+="</tr>";
-        
+
+        /**
+         * Calculate offset leave/entry
+         */
+        let stateLeave = STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave';
+        let stateEntry = STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry';
+        if ( (!isEmpty(getState(stateLeave).val) && isLoopUserPresent) || (!isEmpty(getState(stateEntry).val) &&  !isLoopUserPresent ) ) {
+
+            // As the states are string format, we simply get the last change of the state, which is a date/time variable
+            let dtLeave = getState(stateLeave).lc; // '.lc' property gets us the date/time when the state changed last time
+            let dtEntry = getState(stateEntry).lc;
+            let offsetMs = Math.abs(dtLeave - dtEntry); // remove minus '-', so get absolute number
+            let intHoursFull = offsetMs / 1000 / 60 /60; // convert milliseconds into hours
+            let intHoursDecimal =  parseInt(intHoursFull.toString().substring(0, intHoursFull.toString().indexOf("."))); // not rounded
+            let offsetJustMins = Math.round ( (intHoursFull - Math.round(intHoursDecimal)) * 60); // gets us just the minutes, without the hours
+            let resultStrHoursOnly = Math.round(intHoursFull).toString();
+            let resultStrHoursSec = zeroPad(intHoursDecimal, 2) + ':' + zeroPad(offsetJustMins, 2)
+            if(LOG_DEBUG) log (cl(DEVICES[lpDevice]) + ' Offset hours only: ' + resultStrHoursOnly + ', Offset hours:seconds: ' + resultStrHoursSec);
+            let finalOffsetStr = (OFFSET_HOURS_AND_MINS) ? resultStrHoursSec : resultStrHoursOnly;
+            setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', finalOffsetStr)
+        } else {
+            // nothing to calculate, so empty state
+            setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', '')
+        }
     }
 
     // Prepare present persons string
@@ -317,6 +358,7 @@ function createScriptStates(){
         createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave', '', {read: true, write: false, type: 'string', name: 'Time of last LEAVE of  ' + cl(DEVICES[lpDevice]), desc: 'Time of last LEAVE of ' + cl(DEVICES[lpDevice])});
         createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry', '', {read: true, write: false, type: 'string', name: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice]), desc: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice])});
         createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', '', {read: true, write: false, type: 'string', name: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice]), desc: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice])});
+        createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', {'name':'Offset: Leave date/time - Entry date/time', 'type':'string', 'read':true, 'write':false });
     }
 
     createState(STATE_PATH + 'anyonePresent', false, {read: true, write: false, type: 'boolean', name: 'Is any person present?', desc: 'Is any person present?'});
@@ -359,5 +401,40 @@ function isState(strStatePath, strict) {
     }
 }
 
+/**
+ * Checks if Array or String is not undefined, null or empty.
+ * Array or String containing just whitespaces or >'< or >"< is considered empty
+ * @param inputVar - Input Array or String, Number, etc.
+ * @return true if it is undefined/null/empty, false if it contains value(s)
+ */
+function isEmpty(inputVar) {
+    if (typeof inputVar !== 'undefined' && inputVar !== null) {
+        var strTemp = JSON.stringify(inputVar);
+        strTemp = strTemp.replace(/\s+/g, ''); // remove all whitespaces
+        strTemp = strTemp.replace(/\"+/g, "");  // remove all >"<
+        strTemp = strTemp.replace(/\'+/g, "");  // remove all >'<  
+        if (strTemp !== '') {
+            return false;            
+        } else {
+            return true;
+        }
+    } else {
+        return true;
+    }
+}
+
+/**
+ * Fügt Vornullen zu einer Zahl hinzu, macht also z.B. aus 7 eine "007". 
+ * zeroPad(5, 4);    // wird "0005"
+ * zeroPad('5', 6);  // wird "000005"
+ * zeroPad(1234, 2); // wird "1234" :)
+ * @param  {string|number}  num     Zahl, die Vornull(en) bekommen soll
+ * @param  {number}         places  Anzahl Stellen.
+ * @return {string}         Zahl mit Vornullen wie gewünscht.
+ */
+function zeroPad(num, places) {
+    let zero = places - num.toString().length + 1;
+    return Array(+(zero > 0 && zero)).join("0") + num;        
 
 
+} 
