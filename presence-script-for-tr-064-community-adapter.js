@@ -44,7 +44,6 @@
  ******************************************************************************/
 
 // Hier werden die States dieses Scripts angelegt
-//const STATE_PATH = 'javascript.'+ instance + '.' + 'mic.TR064-Anwesenheitssteuerung.';
 const STATE_PATH = 'javascript.'+ instance + '.' + 'TR064-Anwesenheitssteuerung.';
 
 // Hier ist der State des TR-064-Community-Adapters, unter dem die einzelnen Geräte geführt sind
