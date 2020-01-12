@@ -20,6 +20,7 @@
  *  - Link zum TR-064-Community-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community
  * ---------------------------
  * Change log:
+ * 0.7 - Mic: Change statepath from javascript.0 to 0_userdata.0
  * 0.6 - Mic: Neuer State 'persons.xxx.offsetEntryLeave', zeigt wie lange die Person an-/abwesend war.
  *               entweder nur in Stunden gerundet (z.B. 49), oder in Stunden:Minuten (z.B. 48:36).
  *               Siehe Erweiterte Einstellungen, OFFSET_HOURS_AND_MINS, hier im Script.
@@ -43,8 +44,9 @@
  * Einstellungen
  ******************************************************************************/
 
-// Hier werden die States dieses Scripts angelegt
-const STATE_PATH = 'javascript.'+ instance + '.' + 'TR064-Anwesenheitssteuerung.';
+// Hier drunter werden die States dieses Scripts angelegt.
+// Wichtig: wir legen diese unterhalb 0_userdata.0 an, nicht unter javascript.0
+const STATE_PATH = '0_userdata.0.Anwesenheit.Status.';
 
 // Hier ist der State des TR-064-Community-Adapters, unter dem die einzelnen Geräte geführt sind
 const STATEPATH_TR064_DEVICES    =    'tr-064-community.0.devices.';
@@ -134,23 +136,21 @@ function init() {
 
     if (passed) {
 
-        // Create states. The info states are created through getFullyBrowserInfo()
-        createScriptStates();
+        // Create states.
+        createUserStates(getScriptStatesToCreate(), function() {
+            // Now, states are created.
 
-        // Delete state, if SIMULATION_ACTIVE is false and if state exists. Just to clean up if it was true before and user changed it to false.
-        if(! SIMULATION_ACTIVE) {
-            if (isState(STATE_PATH + 'presenceSimulationActive'), true) {
-                deleteState(STATE_PATH + 'presenceSimulationActive');
+            // Delete state, if SIMULATION_ACTIVE is false and if state exists. Just to clean up if it was true before and user changed it to false.
+            if(! SIMULATION_ACTIVE) {
+                if (isState(STATE_PATH + 'presenceSimulationActive'), false) {
+                    deleteState(STATE_PATH + 'presenceSimulationActive');
+                }
             }
-        }
-        
-        // Get initial status with TR-064 adapter
-        setTimeout(function(){
-            main(0);
-        }, 3000);
 
-        // Schedule for each user
-        setTimeout(function() {
+            // Execute main() to get initial status with TR-064 adapter
+            main(0);
+
+            // Schedule for each user
             for (let lpDevice in DEVICES){
                 on({id: STATEPATH_TR064_DEVICES + lpDevice, change:'ne'}, function(obj) {
                     let deviceName = obj.id.split('.').pop();
@@ -175,8 +175,9 @@ function init() {
                     }
                 });
             }
-        }, 5000)    
 
+        });
+        
     } else {
         log('Script wird nicht weiter ausgeführt aufgrund der ausgegebenen Fehler.', 'warn');
     }
@@ -344,28 +345,31 @@ function writelog(string) {
 }
 
 /**
- * Create states
+ * Prepare states we need to create
+ * @return {object} Array of all states to be created with createUserStates()
  */
-function createScriptStates(){
+function getScriptStatesToCreate() {
 
-    if (! isState(STATE_PATH)) {
+    if (! isState(STATE_PATH, false)) {
         if (LOG_INFO) log('Initiale Datenpunkte werden nun unter [' + STATE_PATH.slice(0, -1) + '] erstellt.');
     }
 
+    let statesArray = [];
     for (let lpDevice in DEVICES) {
-        createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.isPresent', false, {read: true, write: false, type: 'boolean', name: 'Is '+ cl(DEVICES[lpDevice]) + ' currently present?', desc: 'Is '+ cl(DEVICES[lpDevice]) + ' currently present?'});
-        createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave', '', {read: true, write: false, type: 'string', name: 'Time of last LEAVE of  ' + cl(DEVICES[lpDevice]), desc: 'Time of last LEAVE of ' + cl(DEVICES[lpDevice])});
-        createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry', '', {read: true, write: false, type: 'string', name: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice]), desc: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice])});
-        createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', '', {read: true, write: false, type: 'string', name: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice]), desc: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice])});
-        createState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', {'name':'Offset: Leave date/time - Entry date/time', 'type':'string', 'read':true, 'write':false });
+        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.isPresent', 'name': 'Is '+ cl(DEVICES[lpDevice]) + ' currently present?', 'read': true, 'write': false, 'type': 'boolean', 'def':false } );
+        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave', read: true, write: false, type: 'string', name: 'Time of last LEAVE of  ' + cl(DEVICES[lpDevice]), 'def':'' });
+        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry', read: true, write: false, type: 'string', name: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice]), 'def':'' });
+        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', read: true, write: false, type: 'string', name: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice]), 'def':'' });
+        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', 'name':'Offset: Leave date/time - Entry date/time', 'type':'string', 'read':true, 'write':false, 'def':'' });
     }
+    statesArray.push( {'id': STATE_PATH + 'anyonePresent', read: true, write: false, type: 'boolean', name: 'Is any person present?', def: false });
+    statesArray.push( {'id': STATE_PATH + 'presentPersonsString', read: true, write: false, type: 'string', name: 'List of present persons: String', def: '' });
+    statesArray.push( {'id': STATE_PATH + 'presentPersonsJson', read: true, write: false, type: 'string', name: 'List of present persons: JSON', def: '' });
+    statesArray.push( {'id': STATE_PATH + 'presentPersonsHTML', read: true, write: false, type: 'string', name: 'List of present persons: HTML', def: '' });
+    statesArray.push( {'id': STATE_PATH + 'allPresentPersonsCount', 'name':'Number of present persons', 'type':'number', 'read':true, 'write':false, 'def':0 });
+    if (SIMULATION_ACTIVE) statesArray.push( {'id': STATE_PATH + 'presenceSimulationActive', 'name':'Presense Simulation Status', 'type':'boolean', 'read':true, 'write':false, 'def':false });
 
-    createState(STATE_PATH + 'anyonePresent', false, {read: true, write: false, type: 'boolean', name: 'Is any person present?', desc: 'Is any person present?'});
-    createState(STATE_PATH + 'presentPersonsString', '', {read: true, write: false, type: 'string', name: 'List of present persons: String', desc: 'List of present persons: String'});
-    createState(STATE_PATH + 'presentPersonsJson', '', {read: true, write: false, type: 'string', name: 'List of present persons: JSON', desc: 'List of present persons: JSON'});
-    createState(STATE_PATH + 'presentPersonsHTML', '', {read: true, write: false, type: 'string', name: 'List of present persons: HTML', desc: 'List of present persons: HTML'});
-    createState(STATE_PATH + 'allPresentPersonsCount', {'name':'Number of present persons', 'type':'number', 'read':true, 'write':false, 'def':0 });
-    if (SIMULATION_ACTIVE) createState(STATE_PATH + 'presenceSimulationActive', {'name':'Presense Simulation Status', 'type':'boolean', 'read':true, 'write':false, 'def':false });
+    return statesArray;
 
 }
 
@@ -382,11 +386,14 @@ function cl(strToClean) {
  * This is a workaround, as getObject() or getState() throw warnings in the log.
  * Set strict to true if the state shall match exactly. If it is false, it will add a wildcard * to the end.
  * See: https://forum.iobroker.net/topic/11354/
- * @param {string}    strStatePath     Input string of state, like 'javascript.0.switches.Osram.Bedroom'
- * @param {boolean}   [strict=false]   Optional: if true, it will work strict, if false, it will add a wildcard * to the end of the string
+ * @param {string}    strStatePath     Input string of state, like 'javas-cript.0.switches.Osram.Bedroom'
+ * @param {boolean}   [strict=true]    Optional: Default is true. If true, it will work strict, if false, it will add a wildcard * to the end of the string
  * @return {boolean}                   true if state exists, false if not
  */
 function isState(strStatePath, strict) {
+
+    if(strict === undefined) strict = true;
+
     let mSelector;
     if (strict) {
         mSelector = $('state[id=' + strStatePath + '$]');
@@ -399,6 +406,7 @@ function isState(strStatePath, strict) {
         return false;
     }
 }
+
 
 /**
  * Checks if Array or String is not undefined, null or empty.
@@ -437,3 +445,86 @@ function zeroPad(num, places) {
 
 
 } 
+
+/**
+ * Creates states under 0_userdata.0
+ * Source: https://forum.iobroker.net/topic/26839/
+ * Thanks to ioBroker forum user "paul53" for the basis of creating states outside javascript.x
+ * Version: 0.4
+ * @param {array} statesToCreate  Object or array of object with state details. Template: {'id':'Test.123.456', 'name':'NAME', 'type':'number', 'unit':'UNIT', 'min':MIN, 'max':MAX, 'read':true, 'write':true, 'role':'ROLE', 'def':DEFAULT }
+ * @param {object} [callback]  Optional: a callback function -- This provided function will be executed once all states are created.
+ */
+function createUserStates(statesToCreate, callback) {
+ 
+    const WARN = false; // Throws warning in log, if state is already existing. Default is false, so no warning in log, if state exists
+    const LOG_DEBUG = false // To debug this function, set to true
+    const WHERE = '0_userdata.0';   // You could change the starting path accordingly. Not recommended to change, though.
+ 
+    if(!Array.isArray(statesToCreate)) statesToCreate = [statesToCreate]; // we allow both an array of objects or a single object
+ 
+    let numStates = statesToCreate.length;
+    let counter = -1;
+    statesToCreate.forEach(function(param) {
+        counter += 1;
+        if (LOG_DEBUG) log ('[Debug] Currently processing following state: [' + param.id + ']');
+ 
+        let stateId = param.id;
+        delete param.id; // remove it, to comply with ioBroker state syntax for setObject() and setState()
+ 
+        stateId = (stateId.startsWith(WHERE)) ? stateId.substring(WHERE.length) : stateId; // remove WHERE from beginning of string
+        stateId = (stateId.startsWith('.')) ? stateId.substring(1) : stateId; // remove first "."
+ 
+        const FULL_STATE_ID = (WHERE.endsWith('.') ? WHERE : WHERE + '.') + stateId; // Final state
+ 
+        if($(FULL_STATE_ID).length) {
+            if (WARN) log('State [' + FULL_STATE_ID + '] is already existing and will no longer be created.', 'warn');
+            if (!WARN && LOG_DEBUG) log('[Debug] State [' + FULL_STATE_ID + '] is already existing and will no longer be created.');
+            numStates--;
+            if (numStates === 0) {
+                if (LOG_DEBUG) log('[Debug] All states successfully processed!');
+                if (typeof callback === 'function') { // execute if a function was provided to parameter callback
+                    if (LOG_DEBUG) log('[Debug] An optional callback function was provided, which we are going to execute now.');
+                    return callback();
+                }
+            } else {
+                return; // https://stackoverflow.com/questions/18452920/continue-in-cursor-foreach
+            }
+        }
+ 
+        // State is not existing, so we are continuing to create the state through setObject().
+        let obj = {};
+        obj.type = 'state';
+        obj.native = {};
+        obj.common = param;
+        setObject(FULL_STATE_ID, obj, function (err) {
+            if (err) {
+                log('Cannot write object for state [' + FULL_STATE_ID + ']: ' + err);
+            } else {
+                if (LOG_DEBUG) log('[Debug] Now we are creating new state [' + FULL_STATE_ID + ']')
+                let init = null;
+                if(param.def === undefined) {
+                    if(param.type === 'number') init = 0;
+                    if(param.type === 'boolean') init = false;
+                    if(param.type === 'string') init = '';
+                } else {
+                    init = param.def;
+                }
+                setTimeout(function() {
+                    setState(FULL_STATE_ID, init, true, function() {
+                        log('setState durchgeführt: ' + FULL_STATE_ID);
+                        numStates--;
+                        if (numStates === 0) {
+                            if (LOG_DEBUG) log('[Debug] All states processed.');
+                            if (typeof callback === 'function') { // execute if a function was provided to parameter callback
+                                if (LOG_DEBUG) log('[Debug] Function to callback parameter was provided');
+                                return callback();
+                            }
+                        }
+                    });
+                }, 50 + (20 * counter) );
+            }
+        });
+ 
+    });
+}
+
