@@ -1,10 +1,10 @@
 /*******************************************************************************
  * ---------------------------
- * Script: An- und Abwesenheitserkennung über TR-064-Community-Adapter
+ * Script: An- und Abwesenheitserkennung über TR-064-Adapter
  * ---------------------------
  * Autor: Mic (ioBroker-Forum) / Mic-M (Github)
  * ---------------------------
- * Das Script nutzt den TR-064-Community-Adapter, der die WLAN-Verfügbarkeit von allen Geräten überwacht.
+ * Das Script nutzt den TR-064-Adapter, der die WLAN-Verfügbarkeit von allen Geräten überwacht.
  *
  * Funktionen:
  *  - Ermittlung der anwesenden und abwesenden Personen
@@ -17,9 +17,10 @@
  * Ressourcen:
  *  - Script ist hier veröffentlicht: https://github.com/Mic-M/iobroker.presence-script-for-tr-064-community-adapter
  *  - Support ioBroker-Forum: https://forum.iobroker.net/topic/4538/anwesenheitscontrol-basierend-auf-tr64-adapter-script
- *  - Link zum TR-064-Community-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community
+ *  - Link zum TR-064-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064
  * ---------------------------
  * Change log:
+ * 1.1 - Mic: * Change path of TR-064 adapter
  * 1.0 - Mic: * Code improvements and fix
  * 0.8 - Mic: + JSON: Add css class "trRecentDate" for highlighting the date of most recent action.
  *              If state is "anwesend", CSS class will be applied to value in column "Kommt"
@@ -54,12 +55,12 @@
 const STATE_PATH = '0_userdata.0.Anwesenheit.Status';
 
 
-// Hier ist der State des TR-064-Community-Adapters, unter dem die einzelnen Geräte geführt sind
-const STATEPATH_TR064_DEVICES    =    'tr-064-community.0.devices.';
+// Hier ist der State des TR-064-Adapters, unter dem die einzelnen Geräte geführt sind
+const STATEPATH_TR064_DEVICES = 'tr-064.0.devices.';
 
-//  Hier die zu überwachenden Geräte vom TR-064-Community-Adapters eintragen.
+//  Hier die zu überwachenden Geräte vom TR-064-Adapter eintragen.
 //  Es können beliebig viele Personen mit neuen Zeilen ergänzt werden.
-//  Links: Gerät aus Spalte "Name" vom TR-TR-064-Community-Adapter
+//  Links: Gerät aus Spalte "Name" vom TR-064-Adapter
 //  Rechts: Name des Besitzers, der angezeigt werden soll
 const DEVICES = {
      'iPhoneDon': 'Donald', 
