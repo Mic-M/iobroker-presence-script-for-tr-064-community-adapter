@@ -20,6 +20,11 @@
  *  - Link zum TR-064-Community-Adapter: https://github.com/iobroker-community-adapters/ioBroker.tr-064-community
  * ---------------------------
  * Change log:
+ * 1.0 - Mic: * Code improvements and fix
+ * 0.8 - Mic: + JSON: Add css class "trRecentDate" for highlighting the date of most recent action.
+ *              If state is "anwesend", CSS class will be applied to value in column "Kommt"
+ *              If state is "abwesend", CSS class will be applied to value in column "Geht"
+ *            + JSON: Add css class "trStatusPresent" / "trStatusLeft" to status values
  * 0.7 - Mic: Change statepath from javascript.0 to 0_userdata.0
  * 0.6 - Mic: Neuer State 'persons.xxx.offsetEntryLeave', zeigt wie lange die Person an-/abwesend war.
  *               entweder nur in Stunden gerundet (z.B. 49), oder in Stunden:Minuten (z.B. 48:36).
@@ -44,9 +49,10 @@
  * Einstellungen
  ******************************************************************************/
 
-// Hier drunter werden die States dieses Scripts angelegt.
-// Wichtig: wir legen diese unterhalb 0_userdata.0 an, nicht unter javascript.0
-const STATE_PATH = '0_userdata.0.Anwesenheit.Status.';
+// Pfad, unter dem die States (Datenpunkte) in den Objekten angelegt werden.
+// Es wird die Anlage sowohl unterhalb '0_userdata.0' als auch 'javascript.x' unterstützt.
+const STATE_PATH = '0_userdata.0.Anwesenheit.Status';
+
 
 // Hier ist der State des TR-064-Community-Adapters, unter dem die einzelnen Geräte geführt sind
 const STATEPATH_TR064_DEVICES    =    'tr-064-community.0.devices.';
@@ -57,7 +63,7 @@ const STATEPATH_TR064_DEVICES    =    'tr-064-community.0.devices.';
 //  Rechts: Name des Besitzers, der angezeigt werden soll
 const DEVICES = {
      'iPhoneDon': 'Donald', 
-	 'Xiaomi': 'Daisy', 
+     'Xiaomi': 'Daisy', 
 };
 
 // Logging in Datei
@@ -106,11 +112,17 @@ const OFFSET_HOURS_AND_MINS = true;
 
 
 
-
-
 /**********************************************************************************************************
  ++++++++++++++++++++++++++++ Ab hier nichts mehr ändern / Stop editing here! ++++++++++++++++++++++++++++
  *********************************************************************************************************/
+
+/****************************************************************************************
+ * Global variables and constants
+ ****************************************************************************************/
+// Final state path
+const FINAL_STATE_LOCATION = validateStatePath(STATE_PATH, false);
+const FINAL_STATE_PATH = validateStatePath(STATE_PATH, true) + '.';
+
 
 /*******************************************************************************
  * Executed on every script start.
@@ -137,13 +149,14 @@ function init() {
     if (passed) {
 
         // Create states.
-        createUserStates(getScriptStatesToCreate(), function() {
+        createUserStates(FINAL_STATE_LOCATION, false, buildScriptStates(), function() {
+
             // Now, states are created.
 
             // Delete state, if SIMULATION_ACTIVE is false and if state exists. Just to clean up if it was true before and user changed it to false.
             if(! SIMULATION_ACTIVE) {
-                if (isState(STATE_PATH + 'presenceSimulationActive'), false) {
-                    deleteState(STATE_PATH + 'presenceSimulationActive');
+                if (isState(FINAL_STATE_PATH + 'presenceSimulationActive'), false) {
+                    deleteState(FINAL_STATE_PATH + 'presenceSimulationActive');
                 }
             }
 
@@ -156,7 +169,7 @@ function init() {
                     let deviceName = obj.id.split('.').pop();
                     if (obj.state.ack) {
                         // Only continue if adapter presence state differs to the script state
-                        if( obj.state.val !== (getState(STATE_PATH + 'persons.' + cl(DEVICES[deviceName]) + '.isPresent')).val) {
+                        if( obj.state.val !== (getState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[deviceName]) + '.isPresent')).val) {
                             if (LOG_DEBUG) log('Presence status of ' + cl(DEVICES[deviceName]) + ' actually changed');
                             if (FIX_ERROR && !obj.state.val) { // if fix Fritzbox error is active and if device is no longer in WiFi per Adapter
                                 if (LOG_DEBUG) log('Fix Error being triggert, Person: ' + cl(DEVICES[deviceName]));
@@ -190,10 +203,10 @@ function main(userKey) {
 
     let currentDateTime = formatDate(new Date(), 'TT.MM.JJJJ SS:mm:ss');
     
-    let presentPersons     = '';
-    let isAnyonePresent  = false;
-    let JsonString          = '[';
-    let HTMLString          = "<table style='width:100%'><thead><tr><th style='text-align:left;'>Name</th><th style='text-align:left;'>Status</th><th style='text-align:left;'>Kommt</th><th style='text-align:left;'>Geht</th></tr></thead><tbody>";                                                      
+    let presentPersons    = '';
+    let isAnyonePresent   = false;
+    let jsonArr           = [];
+    let HTMLString        = "<table style='width:100%'><thead><tr><th style='text-align:left;'>Name</th><th style='text-align:left;'>Status</th><th style='text-align:left;'>Kommt</th><th style='text-align:left;'>Geht</th></tr></thead><tbody>";
     let counter = 0;
     let message = '';
     for (let lpDevice in DEVICES) {
@@ -202,15 +215,15 @@ function main(userKey) {
         // Anwesenheitsstatus auslesen aus TR064
         let isLoopUserPresent = getState(STATEPATH_TR064_DEVICES + lpDevice).val;
         // Status setzen
-        setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.isPresent', isLoopUserPresent);
+        setState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.isPresent', isLoopUserPresent);
 
         // Get state times of last leave/entry
-        let lpTimeLastLeave  = getState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave').val;
-        let lpTimeLastEntry = getState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry').val;
+        let lpTimeLastLeave  = getState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave').val;
+        let lpTimeLastEntry = getState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry').val;
         
         if (lpDevice === userKey) {
-            setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + (isLoopUserPresent ? '.timeLastEntry': '.timeLastLeave'), currentDateTime);
-            setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', currentDateTime);
+            setState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + (isLoopUserPresent ? '.timeLastEntry': '.timeLastLeave'), currentDateTime);
+            setState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', currentDateTime);
             if(isLoopUserPresent) {
                 lpTimeLastEntry = currentDateTime;
             } else {
@@ -234,26 +247,13 @@ function main(userKey) {
             isAnyonePresent = true;
         }
 
-        /**
-         * Generate Json String
-         */
-        JsonString += "{" + '"'  + "Name" + '":' + '"'  + cl(DEVICES[lpDevice]) + '"' + "," + '"'  + "Status" + '"' + ":" + '"'  + (isLoopUserPresent ? 'anwesend' : 'abwesend') + '"' + "," + '"'  + "Letzte Ankunft" + '"' + ":" + '"'  + lpTimeLastEntry + '"' + "," + '"'  + "Letzte Abwesenheit" + '"' + ":" + '"'  + lpTimeLastLeave + '"' + "}";
 
         /**
-         * Generate HTML String
+         * Calculate offset leave/entry and set states accordingly
          */
-        HTMLString+="<tr>";
-        HTMLString+="<td>"+cl(DEVICES[lpDevice])+"</td>"
-        HTMLString+="<td>"+(isLoopUserPresent ? '<div class="mdui-green-bg mdui-state mdui-card">anwesend</div>' : '<div class="mdui-red-bg mdui-state mdui-card">abwesend</div>')+"</td>"
-        HTMLString+="<td>"+lpTimeLastEntry+"</td>"
-        HTMLString+="<td>"+lpTimeLastLeave+"</td>"
-        HTMLString+="</tr>";
-
-        /**
-         * Calculate offset leave/entry
-         */
-        let stateLeave = STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave';
-        let stateEntry = STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry';
+        let lpCurrentOffset = '';
+        let stateLeave = FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave';
+        let stateEntry = FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry';
         if ( (!isEmpty(getState(stateLeave).val) && isLoopUserPresent) || (!isEmpty(getState(stateEntry).val) &&  !isLoopUserPresent ) ) {
 
             // As the states are string format, we simply get the last change of the state, which is a date/time variable
@@ -267,12 +267,38 @@ function main(userKey) {
             let resultStrHoursSec = zeroPad(intHoursDecimal, 2) + ':' + zeroPad(offsetJustMins, 2)
             if(LOG_DEBUG) log (cl(DEVICES[lpDevice]) + ' Offset hours only: ' + resultStrHoursOnly + ', Offset hours:seconds: ' + resultStrHoursSec);
             let finalOffsetStr = (OFFSET_HOURS_AND_MINS) ? resultStrHoursSec : resultStrHoursOnly;
-            setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', finalOffsetStr)
+            setState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', finalOffsetStr);
+            lpCurrentOffset = finalOffsetStr;
+
         } else {
             // nothing to calculate, so empty state
-            setState(STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', '')
+            setState(FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', '');
+            lpCurrentOffset = '';
         }
-    }
+
+        /**
+         * Generate JSON
+         */
+        let lpObjJ = {};
+        lpObjJ['Name']                  = cl(DEVICES[lpDevice]);
+        lpObjJ['Status']                = (isLoopUserPresent ? "<span class='trStatusPresent'>anwesend</span>" : "<span class='trStatusLeave'>abwesend</span>");
+        lpObjJ['Letzte Ankunft']        = ((isLoopUserPresent) ? "<span class='trRecentDate'>" : '') + lpTimeLastEntry + ((isLoopUserPresent) ? '</span>' : '');
+        lpObjJ['Letzte Abwesenheit']    = ((!isLoopUserPresent) ? "<span class='trRecentDate'>" : '') + lpTimeLastLeave + ((!isLoopUserPresent) ? '</span>' : '');
+        lpObjJ['Dauer']                 = lpCurrentOffset;
+        jsonArr.push(lpObjJ);
+
+        /**
+         * Generate HTML String
+         */
+        HTMLString+="<tr>";
+        HTMLString+="<td>"+cl(DEVICES[lpDevice])+"</td>"
+        HTMLString+="<td>"+(isLoopUserPresent ? '<div class="mdui-green-bg mdui-state mdui-card">anwesend</div>' : '<div class="mdui-red-bg mdui-state mdui-card">abwesend</div>')+"</td>"
+        HTMLString+="<td>"+lpTimeLastEntry+"</td>"
+        HTMLString+="<td>"+lpTimeLastLeave+"</td>"
+        HTMLString+="</tr>";
+
+    } // for (let lpDevice in DEVICES) {
+
 
     // Prepare present persons string
     if (!isAnyonePresent) {
@@ -295,28 +321,24 @@ function main(userKey) {
         }
     }
 
-
-
-
-    JsonString += "]";  
     HTMLString += "</body></table>";  
     
-    setState(STATE_PATH + 'presentPersonsJson', JsonString);
-    setState(STATE_PATH + 'presentPersonsHTML', HTMLString);
+    setState(FINAL_STATE_PATH + 'presentPersonsJson', JSON.stringify(jsonArr));
+    setState(FINAL_STATE_PATH + 'presentPersonsHTML', HTMLString);
 
-    setState(STATE_PATH + 'anyonePresent', isAnyonePresent);
-    setState(STATE_PATH + 'allPresentPersonsCount', counter);
-    setState(STATE_PATH + 'presentPersonsString', presentPersons);
+    setState(FINAL_STATE_PATH + 'anyonePresent', isAnyonePresent);
+    setState(FINAL_STATE_PATH + 'allPresentPersonsCount', counter);
+    setState(FINAL_STATE_PATH + 'presentPersonsString', presentPersons);
 
 
     // Anwesenheitssimulation ein-oder ausschalten
     if (SIMULATION_ACTIVE){
         if (isAnyonePresent) {
-            setState(STATE_PATH + 'presenceSimulationActive', false);    
+            setState(FINAL_STATE_PATH + 'presenceSimulationActive', false);    
         } else {
-            if (! getState(STATE_PATH + 'presenceSimulationActive').val) {
+            if (! getState(FINAL_STATE_PATH + 'presenceSimulationActive').val) {
                 // Presence simulation is currently off, so we set flag to true
-                setStateDelayed(STATE_PATH + 'presenceSimulationActive', true, SIMULATION_DELAY * 1000);
+                setStateDelayed(FINAL_STATE_PATH + 'presenceSimulationActive', true, SIMULATION_DELAY * 1000);
                 if (LOG_INFO) log('Presence Simulation flag will be activated in ' + SIMULATION_DELAY + ' seconds.');     
             }
         } 
@@ -348,29 +370,23 @@ function writelog(string) {
  * Prepare states we need to create
  * @return {object} Array of all states to be created with createUserStates()
  */
-function getScriptStatesToCreate() {
-
-    if (! isState(STATE_PATH, false)) {
-        if (LOG_INFO) log('Initiale Datenpunkte werden nun unter [' + STATE_PATH.slice(0, -1) + '] erstellt.');
+function buildScriptStates() {
+    let finalStates = [];
+    for (const lpDevice in DEVICES) {
+        finalStates.push([FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.isPresent', {name: 'Is '+ cl(DEVICES[lpDevice]) + ' currently present?', type: 'boolean', read: true, write: false, def:false }]);
+        finalStates.push([FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave', {name: 'Time of last LEAVE of  ' + cl(DEVICES[lpDevice]), type: 'string', read: true, write: false, def:'' }]);
+        finalStates.push([FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry', {name: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice]), type: 'string', read: true, write: false, def:'' }]);
+        finalStates.push([FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', {name: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice]), type: 'string', read: true, write: false, def:'' }]);
+        finalStates.push([FINAL_STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', {name:'Offset: Leave date/time - Entry date/time', type:'string', read:true, write:false, def:'' }]);
     }
+    finalStates.push([FINAL_STATE_PATH + 'anyonePresent',          {name: 'Is any person present?', type: 'boolean', read: true, write: false, def: false }]);
+    finalStates.push([FINAL_STATE_PATH + 'presentPersonsString',   {name: 'List of present persons: String', type: 'string', read: true, write: false, def: '' }]);
+    finalStates.push([FINAL_STATE_PATH + 'presentPersonsJson',     {name: 'List of present persons: JSON', type: 'string', read: true, write: false, def: '' }]);
+    finalStates.push([FINAL_STATE_PATH + 'presentPersonsHTML',     {name: 'List of present persons: HTML', type: 'string', read: true, write: false, def: '' }]);
+    finalStates.push([FINAL_STATE_PATH + 'allPresentPersonsCount', {name:'Number of present persons', type: 'number', read: true, write: false, def: 0 }]);
+    if (SIMULATION_ACTIVE) finalStates.push([FINAL_STATE_PATH + 'presenceSimulationActive', {name: 'Presense Simulation Status', type: 'boolean', read: true, write: false, def: false }]);
 
-    let statesArray = [];
-    for (let lpDevice in DEVICES) {
-        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.isPresent', 'name': 'Is '+ cl(DEVICES[lpDevice]) + ' currently present?', 'read': true, 'write': false, 'type': 'boolean', 'def':false } );
-        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastLeave', read: true, write: false, type: 'string', name: 'Time of last LEAVE of  ' + cl(DEVICES[lpDevice]), 'def':'' });
-        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeLastEntry', read: true, write: false, type: 'string', name: 'Time of last ENTRY of ' + cl(DEVICES[lpDevice]), 'def':'' });
-        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.timeMostRecent', read: true, write: false, type: 'string', name: 'Time of most recent entry or leave of ' + cl(DEVICES[lpDevice]), 'def':'' });
-        statesArray.push( {'id': STATE_PATH + 'persons.' + cl(DEVICES[lpDevice]) + '.offsetEntryLeave', 'name':'Offset: Leave date/time - Entry date/time', 'type':'string', 'read':true, 'write':false, 'def':'' });
-    }
-    statesArray.push( {'id': STATE_PATH + 'anyonePresent', read: true, write: false, type: 'boolean', name: 'Is any person present?', def: false });
-    statesArray.push( {'id': STATE_PATH + 'presentPersonsString', read: true, write: false, type: 'string', name: 'List of present persons: String', def: '' });
-    statesArray.push( {'id': STATE_PATH + 'presentPersonsJson', read: true, write: false, type: 'string', name: 'List of present persons: JSON', def: '' });
-    statesArray.push( {'id': STATE_PATH + 'presentPersonsHTML', read: true, write: false, type: 'string', name: 'List of present persons: HTML', def: '' });
-    statesArray.push( {'id': STATE_PATH + 'allPresentPersonsCount', 'name':'Number of present persons', 'type':'number', 'read':true, 'write':false, 'def':0 });
-    if (SIMULATION_ACTIVE) statesArray.push( {'id': STATE_PATH + 'presenceSimulationActive', 'name':'Presense Simulation Status', 'type':'boolean', 'read':true, 'write':false, 'def':false });
-
-    return statesArray;
-
+    return finalStates;
 }
 
 
@@ -446,85 +462,150 @@ function zeroPad(num, places) {
 
 } 
 
+
+
 /**
- * Creates states under 0_userdata.0
- * Source: https://forum.iobroker.net/topic/26839/
- * Thanks to ioBroker forum user "paul53" for the basis of creating states outside javascript.x
- * Version: 0.4
- * @param {array} statesToCreate  Object or array of object with state details. Template: {'id':'Test.123.456', 'name':'NAME', 'type':'number', 'unit':'UNIT', 'min':MIN, 'max':MAX, 'read':true, 'write':true, 'role':'ROLE', 'def':DEFAULT }
- * @param {object} [callback]  Optional: a callback function -- This provided function will be executed once all states are created.
+ * For a given state path, we extract the location '0_userdata.0' or 'javascript.0' or add '0_userdata.0', if missing.
+ * @param {string}  path            Like: 'Computer.Control-PC', 'javascript.0.Computer.Control-PC', '0_userdata.0.Computer.Control-PC'
+ * @param {boolean} returnFullPath  If true: full path like '0_userdata.0.Computer.Control-PC', if false: just location like '0_userdata.0' or 'javascript.0'
+ * @return {string}                 Path
  */
-function createUserStates(statesToCreate, callback) {
- 
-    const WARN = false; // Throws warning in log, if state is already existing. Default is false, so no warning in log, if state exists
-    const LOG_DEBUG = false // To debug this function, set to true
-    const WHERE = '0_userdata.0';   // You could change the starting path accordingly. Not recommended to change, though.
- 
-    if(!Array.isArray(statesToCreate)) statesToCreate = [statesToCreate]; // we allow both an array of objects or a single object
- 
-    let numStates = statesToCreate.length;
-    let counter = -1;
-    statesToCreate.forEach(function(param) {
-        counter += 1;
-        if (LOG_DEBUG) log ('[Debug] Currently processing following state: [' + param.id + ']');
- 
-        let stateId = param.id;
-        delete param.id; // remove it, to comply with ioBroker state syntax for setObject() and setState()
- 
-        stateId = (stateId.startsWith(WHERE)) ? stateId.substring(WHERE.length) : stateId; // remove WHERE from beginning of string
-        stateId = (stateId.startsWith('.')) ? stateId.substring(1) : stateId; // remove first "."
- 
-        const FULL_STATE_ID = (WHERE.endsWith('.') ? WHERE : WHERE + '.') + stateId; // Final state
- 
-        if($(FULL_STATE_ID).length) {
-            if (WARN) log('State [' + FULL_STATE_ID + '] is already existing and will no longer be created.', 'warn');
-            if (!WARN && LOG_DEBUG) log('[Debug] State [' + FULL_STATE_ID + '] is already existing and will no longer be created.');
-            numStates--;
-            if (numStates === 0) {
-                if (LOG_DEBUG) log('[Debug] All states successfully processed!');
-                if (typeof callback === 'function') { // execute if a function was provided to parameter callback
-                    if (LOG_DEBUG) log('[Debug] An optional callback function was provided, which we are going to execute now.');
-                    return callback();
-                }
-            } else {
-                return; // https://stackoverflow.com/questions/18452920/continue-in-cursor-foreach
-            }
-        }
- 
-        // State is not existing, so we are continuing to create the state through setObject().
-        let obj = {};
-        obj.type = 'state';
-        obj.native = {};
-        obj.common = param;
-        setObject(FULL_STATE_ID, obj, function (err) {
-            if (err) {
-                log('Cannot write object for state [' + FULL_STATE_ID + ']: ' + err);
-            } else {
-                if (LOG_DEBUG) log('[Debug] Now we are creating new state [' + FULL_STATE_ID + ']')
-                let init = null;
-                if(param.def === undefined) {
-                    if(param.type === 'number') init = 0;
-                    if(param.type === 'boolean') init = false;
-                    if(param.type === 'string') init = '';
-                } else {
-                    init = param.def;
-                }
-                setTimeout(function() {
-                    setState(FULL_STATE_ID, init, true, function() {
-                        log('setState durchgeführt: ' + FULL_STATE_ID);
-                        numStates--;
-                        if (numStates === 0) {
-                            if (LOG_DEBUG) log('[Debug] All states processed.');
-                            if (typeof callback === 'function') { // execute if a function was provided to parameter callback
-                                if (LOG_DEBUG) log('[Debug] Function to callback parameter was provided');
-                                return callback();
-                            }
-                        }
-                    });
-                }, 50 + (20 * counter) );
-            }
-        });
- 
-    });
+function validateStatePath(path, returnFullPath) {
+    if (path.startsWith('.')) path = path.substr(1);    // Remove first dot
+    if (path.endsWith('.'))   path = path.slice(0, -1); // Remove trailing dot
+    if (path.length < 1) log('Provided state path is not valid / too short.', 'error')
+    let match = path.match(/^((javascript\.([1-9][0-9]|[0-9])\.)|0_userdata\.0\.)/);
+    let location = (match == null) ? '0_userdata.0' : match[0].slice(0, -1); // default is '0_userdata.0'.
+    if(returnFullPath) {
+        return (path.indexOf(location) == 0) ? path : (location + '.' + path);
+    } else {
+        return location;
+    }
 }
 
+
+/**
+ * Create states under 0_userdata.0 or javascript.x
+ * Current Version:     https://github.com/Mic-M/iobroker.createUserStates
+ * Support:             https://forum.iobroker.net/topic/26839/
+ * Autor:               Mic (ioBroker) | Mic-M (github)
+ * Version:             1.1 (26 January 2020)
+ * Example:             see https://github.com/Mic-M/iobroker.createUserStates#beispiel
+ * -----------------------------------------------
+ * PLEASE NOTE: Per https://github.com/ioBroker/ioBroker.javascript/issues/474, the used function setObject() 
+ *              executes the callback PRIOR to completing the state creation. Therefore, we use a setTimeout and counter. 
+ * -----------------------------------------------
+ * @param {string} where          Where to create the state: '0_userdata.0' or 'javascript.x'.
+ * @param {boolean} force         Force state creation (overwrite), if state is existing.
+ * @param {array} statesToCreate  State(s) to create. single array or array of arrays
+ * @param {object} [callback]     Optional: a callback function -- This provided function will be executed after all states are created.
+ */
+function createUserStates(where, force, statesToCreate, callback = undefined) {
+ 
+    const WARN = false; // Only for 0_userdata.0: Throws warning in log, if state is already existing and force=false. Default is false, so no warning in log, if state exists.
+    const LOG_DEBUG = false; // To debug this function, set to true
+    // Per issue #474 (https://github.com/ioBroker/ioBroker.javascript/issues/474), the used function setObject() executes the callback 
+    // before the state is actual created. Therefore, we use a setTimeout and counter as a workaround.
+    const DELAY = 50; // Delay in milliseconds (ms). Increase this to 100, if it is not working.
+
+    // Validate "where"
+    if (where.endsWith('.')) where = where.slice(0, -1); // Remove trailing dot
+    if ( (where.match(/^((javascript\.([1-9][0-9]|[0-9]))$|0_userdata\.0$)/) == null) ) {
+        log('This script does not support to create states under [' + where + ']', 'error');
+        return;
+    }
+
+    // Prepare "statesToCreate" since we also allow a single state to create
+    if(!Array.isArray(statesToCreate[0])) statesToCreate = [statesToCreate]; // wrap into array, if just one array and not inside an array
+
+    // Add "where" to STATES_TO_CREATE
+    for (let i = 0; i < statesToCreate.length; i++) {
+        let lpPath = statesToCreate[i][0].replace(/\.*\./g, '.'); // replace all multiple dots like '..', '...' with a single '.'
+        lpPath = lpPath.replace(/^((javascript\.([1-9][0-9]|[0-9])\.)|0_userdata\.0\.)/,'') // remove any javascript.x. / 0_userdata.0. from beginning
+        lpPath = where + '.' + lpPath; // add where to beginning of string
+        statesToCreate[i][0] = lpPath;
+    }
+
+    if (where != '0_userdata.0') {
+        // Create States under javascript.x
+        let numStates = statesToCreate.length;
+        statesToCreate.forEach(function(loopParam) {
+            if (LOG_DEBUG) log('[Debug] Now we are creating new state [' + loopParam[0] + ']');
+            let loopInit = (loopParam[1]['def'] == undefined) ? null : loopParam[1]['def']; // mimic same behavior as createState if no init value is provided
+            createState(loopParam[0], loopInit, force, loopParam[1], function() {
+                numStates--;
+                if (numStates === 0) {
+                    if (LOG_DEBUG) log('[Debug] All states processed.');
+                    if (typeof callback === 'function') { // execute if a function was provided to parameter callback
+                        if (LOG_DEBUG) log('[Debug] Function to callback parameter was provided');
+                        return callback();
+                    } else {
+                        return;
+                    }
+                }
+            });
+        });
+    } else {
+        // Create States under 0_userdata.0
+        let numStates = statesToCreate.length;
+        let counter = -1;
+        statesToCreate.forEach(function(loopParam) {
+            counter += 1;
+            if (LOG_DEBUG) log ('[Debug] Currently processing following state: [' + loopParam[0] + ']');
+            if( ($(loopParam[0]).length > 0) && (existsState(loopParam[0])) ) { // Workaround due to https://github.com/ioBroker/ioBroker.javascript/issues/478
+                // State is existing.
+                if (WARN && !force) log('State [' + loopParam[0] + '] is already existing and will no longer be created.', 'warn');
+                if (!WARN && LOG_DEBUG) log('[Debug] State [' + loopParam[0] + '] is already existing. Option force (=overwrite) is set to [' + force + '].');
+                if(!force) {
+                    // State exists and shall not be overwritten since force=false
+                    // So, we do not proceed.
+                    numStates--;
+                    if (numStates === 0) {
+                        if (LOG_DEBUG) log('[Debug] All states successfully processed!');
+                        if (typeof callback === 'function') { // execute if a function was provided to parameter callback
+                            if (LOG_DEBUG) log('[Debug] An optional callback function was provided, which we are going to execute now.');
+                            return callback();
+                        }
+                    } else {
+                        // We need to go out and continue with next element in loop.
+                        return; // https://stackoverflow.com/questions/18452920/continue-in-cursor-foreach
+                    }
+                } // if(!force)
+            }
+
+            // State is not existing or force = true, so we are continuing to create the state through setObject().
+            let obj = {};
+            obj.type = 'state';
+            obj.native = {};
+            obj.common = loopParam[1];
+            setObject(loopParam[0], obj, function (err) {
+                if (err) {
+                    log('Cannot write object for state [' + loopParam[0] + ']: ' + err);
+                } else {
+                    if (LOG_DEBUG) log('[Debug] Now we are creating new state [' + loopParam[0] + ']')
+                    let init = null;
+                    if(loopParam[1].def === undefined) {
+                        if(loopParam[1].type === 'number') init = 0;
+                        if(loopParam[1].type === 'boolean') init = false;
+                        if(loopParam[1].type === 'string') init = '';
+                    } else {
+                        init = loopParam[1].def;
+                    }
+                    setTimeout(function() {
+                        setState(loopParam[0], init, true, function() {
+                            if (LOG_DEBUG) log('[Debug] setState durchgeführt: ' + loopParam[0]);
+                            numStates--;
+                            if (numStates === 0) {
+                                if (LOG_DEBUG) log('[Debug] All states processed.');
+                                if (typeof callback === 'function') { // execute if a function was provided to parameter callback
+                                    if (LOG_DEBUG) log('[Debug] Function to callback parameter was provided');
+                                    return callback();
+                                }
+                            }
+                        });
+                    }, DELAY + (20 * counter) );
+                }
+            });
+        });
+    }
+}
